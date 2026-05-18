@@ -1,5 +1,5 @@
-import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import mongoose from 'mongoose';
 import User from './models/User.js';
 import Vehicle from './models/Vehicle.js';
 
@@ -31,10 +31,10 @@ const seedData = async () => {
     });
 
     const admin = await User.create({
-      name: 'Super Admin',
-      email: 'admin@test.com',
-      password: 'password',
-      phone: '1111111111',
+      name: 'Anshul Sharma',
+      email: 'anshulsharma1219@gmail.com',
+      password: 'Anshul@HeavyHire',
+      phone: '8058928399',
       role: 'admin'
     });
 
