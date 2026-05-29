@@ -16,7 +16,41 @@ const Vehicles = () => {
   const [selectedVehicle, setSelectedVehicle] = useState(null);
   const [bookingType, setBookingType] = useState('daily'); // 'daily' or 'hourly'
   const [bookingDates, setBookingDates] = useState({ startDate: '', endDate: '', startTime: '', endTime: '' });
+  const [deliveryLocation, setDeliveryLocation] = useState('');
   const [bookingLoading, setBookingLoading] = useState(false);
+
+  // Helper to calculate estimated price and duration
+  const getEstimatedBookingPrice = () => {
+    if (!selectedVehicle) return null;
+    
+    if (bookingType === 'daily') {
+      if (!bookingDates.startDate || !bookingDates.endDate) return null;
+      const start = new Date(bookingDates.startDate);
+      const end = new Date(bookingDates.endDate);
+      if (end < start) return { error: 'End date must be after start date' };
+      const diffTime = Math.abs(end - start);
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+      return {
+        durationText: `${diffDays} Day(s)`,
+        total: diffDays * (selectedVehicle.pricePerDay || 0)
+      };
+    } else {
+      if (!bookingDates.startDate || !bookingDates.startTime || !bookingDates.endTime) return null;
+      const [startH, startM] = bookingDates.startTime.split(':').map(Number);
+      const [endH, endM] = bookingDates.endTime.split(':').map(Number);
+      let diffHours = (endH - startH) + (endM - startM) / 60;
+      if (diffHours < 0) {
+        diffHours += 24; // handles overnight
+      }
+      const duration = Math.ceil(diffHours * 100) / 100;
+      return {
+        durationText: `${duration} Hour(s)`,
+        total: Math.ceil(duration * (selectedVehicle.pricePerHour || 0))
+      };
+    }
+  };
+
+  const estPriceInfo = getEstimatedBookingPrice();
 
   // Filters
   const [categoryFilter, setCategoryFilter] = useState(searchParams.get('category') || '');
@@ -71,12 +105,14 @@ const Vehicles = () => {
         bookingDate: bookingDates.startDate,
         endDate: bookingType === 'daily' ? bookingDates.endDate : undefined,
         startTime: bookingType === 'hourly' ? bookingDates.startTime : undefined,
-        endTime: bookingType === 'hourly' ? bookingDates.endTime : undefined
+        endTime: bookingType === 'hourly' ? bookingDates.endTime : undefined,
+        deliveryLocation
       });
       toast.success('Booking request sent successfully!');
       setSelectedVehicle(null);
       setBookingType('daily');
       setBookingDates({ startDate: '', endDate: '', startTime: '', endTime: '' });
+      setDeliveryLocation('');
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to book vehicle');
     } finally {
@@ -320,10 +356,43 @@ const Vehicles = () => {
                   </div>
                 </div>
               )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Full Delivery Location</label>
+                <input 
+                  type="text" 
+                  required
+                  placeholder="Enter full address for delivery"
+                  className="input-field"
+                  value={deliveryLocation}
+                  onChange={(e) => setDeliveryLocation(e.target.value)}
+                />
+              </div>
+
+              {estPriceInfo && (
+                <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 mt-3">
+                  {estPriceInfo.error ? (
+                    <p className="text-red-600 text-sm font-medium">{estPriceInfo.error}</p>
+                  ) : (
+                    <div className="flex justify-between items-center text-sm">
+                      <div>
+                        <p className="text-gray-500">Estimated Duration</p>
+                        <p className="font-bold text-gray-800">{estPriceInfo.durationText}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-gray-500 font-medium">Estimated Cost</p>
+                        <p className="font-bold text-lg text-dark-darker flex items-center justify-end">
+                          <IndianRupee size={16} />{estPriceInfo.total}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
               
               <button 
                 type="submit" 
-                disabled={bookingLoading}
+                disabled={bookingLoading || (estPriceInfo && estPriceInfo.error)}
                 className="w-full btn-primary py-3 mt-4 disabled:opacity-50"
               >
                 {bookingLoading ? 'Processing...' : 'Confirm Booking Request'}

@@ -37,6 +37,13 @@ const bookingSchema = new mongoose.Schema({
     enum: ['pending', 'paid', 'failed'],
     default: 'pending',
   },
+  deliveryLocation: {
+    type: String,
+  },
+  totalAmount: {
+    type: Number,
+    default: 0,
+  },
 }, {
   timestamps: true,
 });

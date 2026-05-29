@@ -1,16 +1,50 @@
 import React, { useContext, useState, useEffect } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import { SocketContext } from '../context/SocketContext';
-import { LogOut, Settings, Calendar, Truck, PlusCircle, Activity } from 'lucide-react';
+import { LogOut, Settings, Calendar, Truck, PlusCircle, Activity, IndianRupee } from 'lucide-react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 
 const OwnerDashboard = () => {
-  const { user, logout } = useContext(AuthContext);
+  const { user, logout, updateProfile } = useContext(AuthContext);
   const socket = useContext(SocketContext);
   const [activeTab, setActiveTab] = useState('overview');
   const [ownerVehicles, setOwnerVehicles] = useState([]);
   const [ownerBookings, setOwnerBookings] = useState([]);
+
+  // Profile Settings form state
+  const [profileForm, setProfileForm] = useState({
+    name: user?.name || '',
+    email: user?.email || '',
+    phone: user?.phone || ''
+  });
+  const [updatingProfile, setUpdatingProfile] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      setProfileForm({
+        name: user.name || '',
+        email: user.email || '',
+        phone: user.phone || ''
+      });
+    }
+  }, [user]);
+
+  const handleUpdateProfile = async (e) => {
+    e.preventDefault();
+    try {
+      setUpdatingProfile(true);
+      const { data } = await api.put('/auth/profile', profileForm);
+      updateProfile(data);
+      toast.success('Profile updated successfully!');
+      setIsEditing(false);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to update profile');
+    } finally {
+      setUpdatingProfile(false);
+    }
+  };
   
   // Edit Vehicle State
   const [editingVehicle, setEditingVehicle] = useState(null);
@@ -88,6 +122,10 @@ const OwnerDashboard = () => {
     setPreviewUrls(urls);
   };
 
+  const totalEarnings = ownerBookings
+    .filter(b => b.status === 'accepted' || b.status === 'completed')
+    .reduce((sum, b) => sum + (b.totalAmount || 0), 0);
+
   return (
     <div className="bg-gray-50 min-h-screen py-10">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row gap-8">
@@ -131,7 +169,7 @@ const OwnerDashboard = () => {
             {activeTab === 'overview' && (
               <div>
                 <h1 className="text-2xl font-bold text-gray-900 mb-6">Owner Dashboard</h1>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                   <div className="bg-blue-50 rounded-xl p-6 border border-blue-100">
                     <h3 className="text-blue-800 font-bold mb-2">My Vehicles</h3>
                     <p className="text-3xl font-extrabold text-blue-900">{ownerVehicles.length}</p>
@@ -144,6 +182,12 @@ const OwnerDashboard = () => {
                     <h3 className="text-yellow-800 font-bold mb-2">Pending Requests</h3>
                     <p className="text-3xl font-extrabold text-yellow-900">
                       {ownerBookings.filter(b => b.status === 'pending').length}
+                    </p>
+                  </div>
+                  <div className="bg-green-50 rounded-xl p-6 border border-green-100">
+                    <h3 className="text-green-800 font-bold mb-2">Total Earnings</h3>
+                    <p className="text-3xl font-extrabold text-green-900 flex items-center">
+                      <IndianRupee size={24} className="mr-1" />{totalEarnings}
                     </p>
                   </div>
                 </div>
@@ -207,41 +251,54 @@ const OwnerDashboard = () => {
                   <div className="space-y-4">
                     {ownerBookings.map(booking => (
                       <div key={booking._id} className="border border-gray-200 rounded-lg p-5 flex flex-col md:flex-row justify-between gap-4">
-                        <div>
+                        <div className="flex-grow">
                           <h4 className="font-bold text-lg text-gray-900">{booking.vehicleId?.vehicleName}</h4>
-                          <div className="mt-2 text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-100">
+                          <div className="mt-2 text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-100 max-w-xl">
                             <p className="font-semibold text-gray-900 mb-1">Customer Details:</p>
                             <p>Name: <span className="font-medium text-gray-800">{booking.userId?.name}</span></p>
                             <p>Email: <span className="font-medium text-gray-800">{booking.userId?.email}</span></p>
                             <p>Phone: <span className="font-medium text-gray-800">{booking.userId?.phone || 'N/A'}</span></p>
                           </div>
-                          <p className="text-gray-500 text-sm mt-3 flex items-center gap-4">
+                          <p className="text-gray-500 text-xs mt-3 flex flex-wrap items-center gap-4">
                             <span className="flex items-center gap-1"><Calendar size={14}/> {new Date(booking.bookingDate).toLocaleDateString()}</span>
                             {booking.startTime && (
                               <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-xs font-bold">
-                                Hourly: {formatTime(booking.startTime)} - {formatTime(booking.endTime)}
+                                Hourly: {formatTime(booking.startTime)} - {formatTime(booking.endTime)} ({booking.duration || 0} hrs)
                               </span>
                             )}
-                            {!booking.startTime && !booking.duration && (
-                              <span className="bg-purple-100 text-purple-800 px-2 py-0.5 rounded text-xs font-bold">Daily Rental</span>
+                            {!booking.startTime && (
+                              <span className="bg-purple-100 text-purple-800 px-2 py-0.5 rounded text-xs font-bold">
+                                Daily ({booking.duration || 0} days)
+                              </span>
                             )}
                           </p>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          {booking.status === 'pending' ? (
-                            <>
-                              <button onClick={() => handleBookingAction(booking._id, 'accepted')} className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-md font-medium text-sm transition-colors">Accept</button>
-                              <button onClick={() => handleBookingAction(booking._id, 'rejected')} className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-md font-medium text-sm transition-colors">Reject</button>
-                            </>
-                          ) : (
-                            <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${
-                              booking.status === 'accepted' ? 'bg-green-100 text-green-800' :
-                              booking.status === 'rejected' ? 'bg-red-100 text-red-800' :
-                              'bg-blue-100 text-blue-800'
-                            }`}>
-                              {booking.status}
-                            </span>
+                          {booking.deliveryLocation && (
+                            <p className="text-xs text-gray-600 mt-2 bg-gray-50 p-2 rounded border border-gray-100 max-w-xl">
+                              <span className="font-semibold text-gray-900 mr-1">Delivery Location:</span>
+                              {booking.deliveryLocation}
+                            </p>
                           )}
+                        </div>
+                        <div className="flex flex-col items-end justify-between shrink-0 ml-4">
+                          <span className="text-lg font-bold text-gray-900 flex items-center mb-4">
+                            Total: <IndianRupee size={16} className="ml-1" />{booking.totalAmount || 0}
+                          </span>
+                          <div className="flex items-center gap-3 mt-auto">
+                            {booking.status === 'pending' ? (
+                              <>
+                                <button onClick={() => handleBookingAction(booking._id, 'accepted')} className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-md font-medium text-sm transition-colors">Accept</button>
+                                <button onClick={() => handleBookingAction(booking._id, 'rejected')} className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-md font-medium text-sm transition-colors">Reject</button>
+                              </>
+                            ) : (
+                              <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${
+                                booking.status === 'accepted' ? 'bg-green-100 text-green-800' :
+                                booking.status === 'rejected' ? 'bg-red-100 text-red-800' :
+                                'bg-blue-100 text-blue-800'
+                              }`}>
+                                {booking.status}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -378,17 +435,77 @@ const OwnerDashboard = () => {
 
             {activeTab === 'settings' && (
               <div>
-                <h2 className="text-2xl font-bold text-gray-900 mb-6">Profile Settings</h2>
-                <div className="max-w-md space-y-4">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-bold text-gray-900">Profile Settings</h2>
+                  {!isEditing && (
+                    <button 
+                      onClick={() => setIsEditing(true)}
+                      className="px-4 py-2 border border-primary text-dark-darker font-bold rounded-lg hover:bg-primary transition-colors text-sm"
+                    >
+                      Edit Profile
+                    </button>
+                  )}
+                </div>
+                <form onSubmit={handleUpdateProfile} className="max-w-md space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-                    <input type="text" className="input-field bg-gray-50" value={user?.name} readOnly />
+                    <input 
+                      type="text" 
+                      required 
+                      className={`input-field ${!isEditing ? 'bg-gray-50 cursor-not-allowed text-gray-500' : ''}`}
+                      readOnly={!isEditing}
+                      value={profileForm.name} 
+                      onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })} 
+                    />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                    <input type="email" className="input-field bg-gray-50" value={user?.email} readOnly />
+                    <input 
+                      type="email" 
+                      required 
+                      className={`input-field ${!isEditing ? 'bg-gray-50 cursor-not-allowed text-gray-500' : ''}`}
+                      readOnly={!isEditing}
+                      value={profileForm.email} 
+                      onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })} 
+                    />
                   </div>
-                </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                    <input 
+                      type="text" 
+                      required 
+                      className={`input-field ${!isEditing ? 'bg-gray-50 cursor-not-allowed text-gray-500' : ''}`}
+                      readOnly={!isEditing}
+                      value={profileForm.phone} 
+                      onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })} 
+                    />
+                  </div>
+                  {isEditing && (
+                    <div className="flex gap-4 mt-4">
+                      <button 
+                        type="submit" 
+                        disabled={updatingProfile} 
+                        className="flex-1 btn-primary py-2.5 disabled:opacity-50 text-sm font-bold"
+                      >
+                        {updatingProfile ? 'Updating...' : 'Update Profile'}
+                      </button>
+                      <button 
+                        type="button" 
+                        onClick={() => {
+                          setProfileForm({
+                            name: user?.name || '',
+                            email: user?.email || '',
+                            phone: user?.phone || ''
+                          });
+                          setIsEditing(false);
+                        }}
+                        className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg text-gray-700 font-bold hover:bg-gray-50 transition-colors text-sm"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                </form>
               </div>
             )}
           </div>

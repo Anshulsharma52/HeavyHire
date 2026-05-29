@@ -7,7 +7,7 @@ import { getIO } from '../socket.js';
 // @access  Private (User)
 export const createBooking = async (req, res) => {
   try {
-    const { vehicleId, bookingDate, endDate, duration, startTime, endTime } = req.body;
+    const { vehicleId, bookingDate, endDate, startTime, endTime, deliveryLocation } = req.body;
 
     const vehicle = await Vehicle.findById(vehicleId);
 
@@ -15,14 +15,39 @@ export const createBooking = async (req, res) => {
       return res.status(404).json({ message: 'Vehicle not found' });
     }
 
+    let computedDuration = 0;
+    let computedTotalAmount = 0;
+
+    if (bookingDate && endDate && !startTime && !endTime) {
+      // Daily booking
+      const start = new Date(bookingDate);
+      const end = new Date(endDate);
+      const diffTime = Math.abs(end - start);
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // inclusive
+      computedDuration = diffDays;
+      computedTotalAmount = diffDays * (vehicle.pricePerDay || 0);
+    } else if (bookingDate && startTime && endTime) {
+      // Hourly booking
+      const [startH, startM] = startTime.split(':').map(Number);
+      const [endH, endM] = endTime.split(':').map(Number);
+      let diffHours = (endH - startH) + (endM - startM) / 60;
+      if (diffHours < 0) {
+        diffHours += 24; // handles overnight rental
+      }
+      computedDuration = Math.ceil(diffHours * 100) / 100; // round to 2 decimals
+      computedTotalAmount = Math.ceil(computedDuration * (vehicle.pricePerHour || 0));
+    }
+
     const booking = new Booking({
       userId: req.user._id,
       vehicleId,
       bookingDate,
       endDate,
-      duration,
+      duration: computedDuration,
       startTime,
       endTime,
+      deliveryLocation,
+      totalAmount: computedTotalAmount,
       status: 'pending',
     });
 
@@ -97,12 +122,11 @@ export const updateBookingStatus = async (req, res) => {
       return res.status(404).json({ message: 'Booking not found' });
     }
 
-    // Check if the user is the owner of the vehicle, an admin, or the customer cancelling their own booking
+    // Check if the user is the owner of the vehicle or an admin
     const isOwner = booking.vehicleId.ownerId.toString() === req.user._id.toString();
     const isAdmin = req.user.role === 'admin';
-    const isCustomerCancelling = booking.userId.toString() === req.user._id.toString() && status === 'cancelled';
 
-    if (!isOwner && !isAdmin && !isCustomerCancelling) {
+    if (!isOwner && !isAdmin) {
       return res.status(401).json({ message: 'Not authorized to update this booking' });
     }
 
