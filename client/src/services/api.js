@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: 'https://heavyhire.onrender.com', // Update if deployed
+  baseURL: 'https://heavyhire.onrender.com/api', // Update if deployed
 });
 
 // Add a request interceptor to include the auth token
